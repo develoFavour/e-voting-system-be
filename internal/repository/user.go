@@ -149,3 +149,49 @@ func (r *UserRepository) CountByStatus(status models.UserStatus) (int64, error) 
 	count, err := r.collection.CountDocuments(context.Background(), bson.M{"status": status})
 	return count, err
 }
+
+// GetDepartmentStats returns count of users by department
+func (r *UserRepository) GetDepartmentStats() ([]bson.M, error) {
+	pipeline := mongo.Pipeline{
+		{{Key: "$group", Value: bson.D{
+			{Key: "_id", Value: "$department"},
+			{Key: "count", Value: bson.D{{Key: "$sum", Value: 1}}},
+		}}},
+		{{Key: "$sort", Value: bson.D{{Key: "count", Value: -1}}}},
+	}
+
+	cursor, err := r.collection.Aggregate(context.Background(), pipeline)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(context.Background())
+
+	var stats []bson.M
+	if err = cursor.All(context.Background(), &stats); err != nil {
+		return nil, err
+	}
+	return stats, nil
+}
+
+// GetFacultyStats returns count of users by faculty
+func (r *UserRepository) GetFacultyStats() ([]bson.M, error) {
+	pipeline := mongo.Pipeline{
+		{{Key: "$group", Value: bson.D{
+			{Key: "_id", Value: "$faculty"},
+			{Key: "count", Value: bson.D{{Key: "$sum", Value: 1}}},
+		}}},
+		{{Key: "$sort", Value: bson.D{{Key: "count", Value: -1}}}},
+	}
+
+	cursor, err := r.collection.Aggregate(context.Background(), pipeline)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(context.Background())
+
+	var stats []bson.M
+	if err = cursor.All(context.Background(), &stats); err != nil {
+		return nil, err
+	}
+	return stats, nil
+}

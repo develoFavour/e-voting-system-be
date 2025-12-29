@@ -38,10 +38,27 @@ func ApproveVoter(db *mongo.Database) gin.HandlerFunc {
 		id := c.Param("id")
 
 		userRepo := repository.NewUserRepository(db)
+		user, err := userRepo.FindByID(id)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "User not found"})
+			return
+		}
+
 		if err := userRepo.UpdateStatus(id, models.StatusApproved); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to approve voter"})
 			return
 		}
+
+		// Log activity
+		adminID, _ := c.Get("user_id")
+		admin, _ := userRepo.FindByID(adminID.(string))
+		activityRepo := repository.NewActivityRepository(db)
+		_ = activityRepo.Create(&models.Activity{
+			Type:      models.ActivityTypeVoterApproved,
+			Message:   "Approved voter: " + user.FullName + " (" + user.MatricNumber + ")",
+			AdminID:   admin.ID,
+			AdminName: admin.FullName,
+		})
 
 		c.JSON(http.StatusOK, gin.H{"message": "Voter approved successfully"})
 	}
@@ -53,10 +70,27 @@ func RejectVoter(db *mongo.Database) gin.HandlerFunc {
 		id := c.Param("id")
 
 		userRepo := repository.NewUserRepository(db)
+		user, err := userRepo.FindByID(id)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "User not found"})
+			return
+		}
+
 		if err := userRepo.UpdateStatus(id, models.StatusRejected); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reject voter"})
 			return
 		}
+
+		// Log activity
+		adminID, _ := c.Get("user_id")
+		admin, _ := userRepo.FindByID(adminID.(string))
+		activityRepo := repository.NewActivityRepository(db)
+		_ = activityRepo.Create(&models.Activity{
+			Type:      models.ActivityTypeVoterRejected,
+			Message:   "Rejected voter: " + user.FullName + " (" + user.MatricNumber + ")",
+			AdminID:   admin.ID,
+			AdminName: admin.FullName,
+		})
 
 		c.JSON(http.StatusOK, gin.H{"message": "Voter rejected"})
 	}
@@ -163,6 +197,18 @@ func AddCandidate(db *mongo.Database, cfg *config.Config) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add candidate"})
 			return
 		}
+
+		// Log activity
+		adminID, _ := c.Get("user_id")
+		userRepo := repository.NewUserRepository(db)
+		admin, _ := userRepo.FindByID(adminID.(string))
+		activityRepo := repository.NewActivityRepository(db)
+		_ = activityRepo.Create(&models.Activity{
+			Type:      models.ActivityTypeCandidateAdded,
+			Message:   "Added new candidate: " + candidate.Name + " for " + candidate.Position,
+			AdminID:   admin.ID,
+			AdminName: admin.FullName,
+		})
 
 		c.JSON(http.StatusCreated, candidate)
 	}
@@ -335,6 +381,18 @@ func StartElection(db *mongo.Database) gin.HandlerFunc {
 			"message":  "Election started successfully",
 			"duration": req.Duration,
 		})
+
+		// Log activity
+		adminID, _ := c.Get("user_id")
+		userRepo := repository.NewUserRepository(db)
+		admin, _ := userRepo.FindByID(adminID.(string))
+		activityRepo := repository.NewActivityRepository(db)
+		_ = activityRepo.Create(&models.Activity{
+			Type:      models.ActivityTypeElectionStarted,
+			Message:   "Started election: " + req.Title,
+			AdminID:   admin.ID,
+			AdminName: admin.FullName,
+		})
 	}
 }
 
@@ -358,6 +416,18 @@ func EndElection(db *mongo.Database) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to end election"})
 			return
 		}
+
+		// Log activity
+		adminID, _ := c.Get("user_id")
+		userRepo := repository.NewUserRepository(db)
+		admin, _ := userRepo.FindByID(adminID.(string))
+		activityRepo := repository.NewActivityRepository(db)
+		_ = activityRepo.Create(&models.Activity{
+			Type:      models.ActivityTypeElectionEnded,
+			Message:   "Ended election: " + currentElection.Title,
+			AdminID:   admin.ID,
+			AdminName: admin.FullName,
+		})
 
 		c.JSON(http.StatusOK, gin.H{"message": "Election ended successfully"})
 	}
@@ -485,5 +555,19 @@ func GetElectionDetails(db *mongo.Database) gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, response)
+	}
+}
+
+// GetRecentActivities returns the most recent admin activities
+func GetRecentActivities(db *mongo.Database) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		activityRepo := repository.NewActivityRepository(db)
+		activities, err := activityRepo.FindRecent(10)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch activities"})
+			return
+		}
+
+		c.JSON(http.StatusOK, activities)
 	}
 }

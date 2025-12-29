@@ -35,6 +35,18 @@ func AddPosition(db *mongo.Database) gin.HandlerFunc {
 			return
 		}
 
+		// Log activity
+		adminID, _ := c.Get("user_id")
+		userRepo := repository.NewUserRepository(db)
+		admin, _ := userRepo.FindByID(adminID.(string))
+		activityRepo := repository.NewActivityRepository(db)
+		_ = activityRepo.Create(&models.Activity{
+			Type:      models.ActivityTypePositionAdded,
+			Message:   "Added new position: " + position.Name,
+			AdminID:   admin.ID,
+			AdminName: admin.FullName,
+		})
+
 		c.JSON(http.StatusCreated, position)
 	}
 }

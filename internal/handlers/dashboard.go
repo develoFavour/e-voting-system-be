@@ -65,12 +65,13 @@ func GetDashboardStats(db *mongo.Database) gin.HandlerFunc {
 			electionInfo = currentElection
 		}
 
-		// Get recent activities (last 10 actions)
-		// For now, we'll return mock data until we implement activity logging
-		recentActivities := []gin.H{
-			{"user": "SYSTEM", "action": "Dashboard statistics refreshed", "time": time.Now().Format("2006-01-02 15:04:05")},
-			{"user": "ADMIN", "action": "Viewed analytics dashboard", "time": time.Now().Add(-5 * time.Minute).Format("2006-01-02 15:04:05")},
-		}
+		// Get real recent activities
+		activityRepo := repository.NewActivityRepository(db)
+		activities, _ := activityRepo.FindRecent(10)
+
+		// Get distribution stats
+		deptStats, _ := userRepo.GetDepartmentStats()
+		facultyStats, _ := userRepo.GetFacultyStats()
 
 		c.JSON(http.StatusOK, gin.H{
 			"totalRegistered":  totalUsers,
@@ -79,8 +80,12 @@ func GetDashboardStats(db *mongo.Database) gin.HandlerFunc {
 			"votesCast":        totalVotes,
 			"totalCandidates":  totalCandidates,
 			"election":         electionInfo,
-			"recentActivities": recentActivities,
-			"lastUpdated":      time.Now(),
+			"recentActivities": activities,
+			"demographics": gin.H{
+				"departments": deptStats,
+				"faculties":   facultyStats,
+			},
+			"lastUpdated": time.Now(),
 		})
 	}
 }

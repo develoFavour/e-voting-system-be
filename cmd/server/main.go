@@ -89,6 +89,7 @@ func main() {
 			admin.GET("/results", handlers.GetResults(db, cfg.EncryptionKey))
 			admin.GET("/elections", handlers.GetAllElections(db))
 			admin.GET("/elections/:id", handlers.GetElectionDetails(db))
+			admin.GET("/activities", handlers.GetRecentActivities(db))
 			admin.POST("/election/start", handlers.StartElection(db))
 			admin.POST("/election/end", handlers.EndElection(db))
 		}
