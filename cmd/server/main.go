@@ -47,10 +47,19 @@ func main() {
 	// API routes
 	api := router.Group("/api")
 	{
+		// Public routes
+		public := api.Group("/public")
+		{
+			public.POST("/register", handlers.Register(db, cfg))
+			public.POST("/login", handlers.Login(db, cfg.JWTSecret))
+			public.POST("/admin/login", handlers.AdminLogin(db, cfg.JWTSecret))
+			public.POST("/refresh-token", handlers.RefreshToken(db, cfg.JWTSecret))
+		}
+
 		// Authentication routes
 		auth := api.Group("/auth")
 		{
-			auth.POST("/register", handlers.Register(db))
+			auth.POST("/register", handlers.Register(db, cfg))
 			auth.POST("/login", handlers.Login(db, cfg.JWTSecret))
 			auth.POST("/admin/login", handlers.AdminLogin(db, cfg.JWTSecret))
 		}
@@ -68,11 +77,18 @@ func main() {
 		admin.Use(middleware.AuthMiddleware(cfg.JWTSecret))
 		admin.Use(middleware.AdminOnly())
 		{
+			admin.GET("/dashboard/stats", handlers.GetDashboardStats(db))
+			admin.GET("/election/current", handlers.GetCurrentElection(db))
 			admin.GET("/accreditation/pending", handlers.GetPendingAccreditation(db))
 			admin.PUT("/accreditation/:id/approve", handlers.ApproveVoter(db))
 			admin.PUT("/accreditation/:id/reject", handlers.RejectVoter(db))
-			admin.POST("/candidates", handlers.AddCandidate(db))
+			admin.POST("/positions", handlers.AddPosition(db))
+			admin.GET("/positions/staged", handlers.GetStagedPositions(db))
+			admin.GET("/candidates", handlers.GetAdminCandidates(db))
+			admin.POST("/candidates", handlers.AddCandidate(db, cfg))
 			admin.GET("/results", handlers.GetResults(db, cfg.EncryptionKey))
+			admin.GET("/elections", handlers.GetAllElections(db))
+			admin.GET("/elections/:id", handlers.GetElectionDetails(db))
 			admin.POST("/election/start", handlers.StartElection(db))
 			admin.POST("/election/end", handlers.EndElection(db))
 		}
@@ -81,9 +97,12 @@ func main() {
 		vote := api.Group("/vote")
 		vote.Use(middleware.AuthMiddleware(cfg.JWTSecret))
 		{
+			vote.GET("/election/current", handlers.GetPublicCurrentElection(db))
+			vote.GET("/positions", handlers.GetLivePositions(db))
 			vote.GET("/candidates", handlers.GetCandidates(db))
 			vote.POST("/cast", handlers.CastVote(db, cfg.EncryptionKey))
 			vote.GET("/results", handlers.GetLiveResults(db))
+			vote.GET("/approved-voters", handlers.GetApprovedVoters(db))
 		}
 	}
 

@@ -24,6 +24,19 @@ func GetCurrentUser(db *mongo.Database) gin.HandlerFunc {
 			return
 		}
 
+		electionRepo := repository.NewElectionRepository(db)
+		voteRepo := repository.NewVoteRepository(db)
+		electionRepo.CheckAndEndExpiredElections()
+		if liveElection, err := electionRepo.GetLiveElection(); err == nil && liveElection != nil {
+			if _, err := voteRepo.FindByUserAndElectionID(userID.(string), liveElection.ID.Hex()); err == nil {
+				user.HasVoted = true
+			} else {
+				user.HasVoted = false
+			}
+		} else {
+			user.HasVoted = false
+		}
+
 		// Remove sensitive data
 		user.PasswordHash = ""
 
@@ -31,7 +44,6 @@ func GetCurrentUser(db *mongo.Database) gin.HandlerFunc {
 	}
 }
 
-// GetAccreditationStatus returns the user's accreditation status
 func GetAccreditationStatus(db *mongo.Database) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID, exists := c.Get("user_id")
@@ -47,11 +59,25 @@ func GetAccreditationStatus(db *mongo.Database) gin.HandlerFunc {
 			return
 		}
 
+		hasVoted := false
+		electionRepo := repository.NewElectionRepository(db)
+		voteRepo := repository.NewVoteRepository(db)
+		electionRepo.CheckAndEndExpiredElections()
+		liveElection, liveErr := electionRepo.GetLiveElection()
+		if liveErr == nil && liveElection != nil {
+			if _, err := voteRepo.FindByUserAndElectionID(userID.(string), liveElection.ID.Hex()); err == nil {
+				hasVoted = true
+			}
+		} else if liveErr != nil && liveErr != mongo.ErrNoDocuments {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to determine voting status"})
+			return
+		}
+
 		c.JSON(http.StatusOK, gin.H{
 			"status":       user.Status,
 			"matricNumber": user.MatricNumber,
 			"fullName":     user.FullName,
-			"hasVoted":     user.HasVoted,
+			"hasVoted":     hasVoted,
 		})
 	}
 }

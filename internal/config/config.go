@@ -15,6 +15,9 @@ type Config struct {
 	EncryptionKey string
 	FrontendURL   string
 	Environment   string
+	CloudinaryCloudName  string
+	CloudinaryAPIKey     string
+	CloudinaryAPISecret  string
 }
 
 func Load() *Config {
@@ -31,6 +34,9 @@ func Load() *Config {
 		EncryptionKey: getEnv("ENCRYPTION_KEY", "default-32-byte-key-change-this!"),
 		FrontendURL:   getEnv("FRONTEND_URL", "http://localhost:3000"),
 		Environment:   getEnv("ENVIRONMENT", "development"),
+		CloudinaryCloudName:  getEnv("CLOUDINARY_CLOUD_NAME", ""),
+		CloudinaryAPIKey:     getEnv("CLOUDINARY_API_KEY", ""),
+		CloudinaryAPISecret:  getEnv("CLOUDINARY_API_SECRET", ""),
 	}
 }
 

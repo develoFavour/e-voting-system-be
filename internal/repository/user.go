@@ -137,3 +137,15 @@ func (r *UserRepository) MarkAsVoted(userID string) error {
 
 	return nil
 }
+
+// Count returns total number of users
+func (r *UserRepository) Count() (int64, error) {
+	count, err := r.collection.CountDocuments(context.Background(), bson.M{})
+	return count, err
+}
+
+// CountByStatus returns number of users with a specific status
+func (r *UserRepository) CountByStatus(status models.UserStatus) (int64, error) {
+	count, err := r.collection.CountDocuments(context.Background(), bson.M{"status": status})
+	return count, err
+}
