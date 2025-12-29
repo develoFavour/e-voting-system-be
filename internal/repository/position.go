@@ -152,3 +152,13 @@ func (r *PositionRepository) AttachUnscopedToElection(electionID string) error {
 	)
 	return err
 }
+
+func (r *PositionRepository) CountStaged() (int64, error) {
+	filter := bson.M{
+		"$or": []bson.M{
+			{"election_id": bson.M{"$exists": false}},
+			{"election_id": primitive.NilObjectID},
+		},
+	}
+	return r.collection.CountDocuments(context.Background(), filter)
+}

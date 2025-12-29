@@ -17,6 +17,7 @@ func GetDashboardStats(db *mongo.Database) gin.HandlerFunc {
 		voteRepo := repository.NewVoteRepository(db)
 		candidateRepo := repository.NewCandidateRepository(db)
 		electionRepo := repository.NewElectionRepository(db)
+		positionRepo := repository.NewPositionRepository(db)
 
 		// Get total registered users
 		totalUsers, err := userRepo.Count()
@@ -53,6 +54,10 @@ func GetDashboardStats(db *mongo.Database) gin.HandlerFunc {
 			return
 		}
 
+		// Get staged counts
+		stagedPositions, _ := positionRepo.CountStaged()
+		stagedCandidates, _ := candidateRepo.CountStaged()
+
 		// Get current election info
 		var electionInfo interface{}
 		currentElection, err := electionRepo.GetCurrentElection()
@@ -79,6 +84,8 @@ func GetDashboardStats(db *mongo.Database) gin.HandlerFunc {
 			"pendingRequests":  pendingUsers,
 			"votesCast":        totalVotes,
 			"totalCandidates":  totalCandidates,
+			"stagedPositions":  stagedPositions,
+			"stagedCandidates": stagedCandidates,
 			"election":         electionInfo,
 			"recentActivities": activities,
 			"demographics": gin.H{

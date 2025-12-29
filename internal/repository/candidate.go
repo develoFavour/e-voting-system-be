@@ -210,3 +210,13 @@ func (r *CandidateRepository) Count() (int64, error) {
 	count, err := r.collection.CountDocuments(context.Background(), bson.M{})
 	return count, err
 }
+
+func (r *CandidateRepository) CountStaged() (int64, error) {
+	filter := bson.M{
+		"$or": []bson.M{
+			{"election_id": bson.M{"$exists": false}},
+			{"election_id": primitive.NilObjectID},
+		},
+	}
+	return r.collection.CountDocuments(context.Background(), filter)
+}

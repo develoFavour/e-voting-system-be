@@ -315,6 +315,23 @@ func StartElection(db *mongo.Database) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Election already live"})
 			return
 		}
+
+		// Validation: ensure there are staged positions and candidates
+		positionRepo := repository.NewPositionRepository(db)
+		candidateRepo := repository.NewCandidateRepository(db)
+
+		stagedPositions, err := positionRepo.FindUnscoped()
+		if err != nil || len(stagedPositions) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Cannot start election: No positions have been created yet."})
+			return
+		}
+
+		stagedCandidates, err := candidateRepo.FindUnscoped()
+		if err != nil || len(stagedCandidates) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Cannot start election: No candidates have been added to the staged positions."})
+			return
+		}
+
 		if currentElection == nil || currentElection.Status == models.ElectionStatusClosed {
 			// Create new election
 			userID, _ := c.Get("user_id")
@@ -347,8 +364,6 @@ func StartElection(db *mongo.Database) gin.HandlerFunc {
 		}
 
 		// Attach staged data to this election
-		positionRepo := repository.NewPositionRepository(db)
-		candidateRepo := repository.NewCandidateRepository(db)
 		_ = positionRepo.AttachUnscopedToElection(electionID)
 		_ = candidateRepo.AttachUnscopedToElection(electionID)
 
