@@ -109,6 +109,25 @@ func (r *UserRepository) FindPendingAccreditation() ([]*models.User, error) {
 	return users, nil
 }
 
+// FindByRole gets all users with a specific role
+func (r *UserRepository) FindByRole(role models.UserRole) ([]*models.User, error) {
+	cursor, err := r.collection.Find(
+		context.Background(),
+		bson.M{"role": role},
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(context.Background())
+
+	var users []*models.User
+	if err = cursor.All(context.Background(), &users); err != nil {
+		return nil, err
+	}
+
+	return users, nil
+}
+
 // MarkAsVoted marks a user as having voted (ATOMIC OPERATION)
 func (r *UserRepository) MarkAsVoted(userID string) error {
 	objectID, err := primitive.ObjectIDFromHex(userID)

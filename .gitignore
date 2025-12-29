@@ -35,6 +35,9 @@ Thumbs.db
 /bin/
 /dist/
 
+# Scripts with credentials
+scripts/create-admin.go
+
 # Build
 /bin/
 /dist/
