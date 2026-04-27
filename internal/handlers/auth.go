@@ -1,8 +1,13 @@
 package handlers
 
 import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"log"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/develoFavour/e-voting-system-be/internal/config"
 	"github.com/develoFavour/e-voting-system-be/internal/models"
@@ -17,13 +22,14 @@ func Register(db *mongo.Database, cfg *config.Config) gin.HandlerFunc {
 	imageService := services.NewImageUploadService(cfg)
 
 	return func(c *gin.Context) {
-		matricNumber := c.PostForm("matricNumber")
-		fullName := c.PostForm("fullName")
-		department := c.PostForm("department")
-		faculty := c.PostForm("faculty")
+		matricNumber := services.NormalizeMatricNumber(c.PostForm("matricNumber"))
+		fullName := strings.TrimSpace(c.PostForm("fullName"))
+		email := strings.TrimSpace(strings.ToLower(c.PostForm("email")))
+		department := strings.TrimSpace(c.PostForm("department"))
+		faculty := strings.TrimSpace(c.PostForm("faculty"))
 		password := c.PostForm("password")
 
-		if matricNumber == "" || fullName == "" || password == "" {
+		if matricNumber == "" || fullName == "" || email == "" || department == "" || faculty == "" || password == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Missing required fields"})
 			return
 		}
@@ -52,6 +58,13 @@ func Register(db *mongo.Database, cfg *config.Config) gin.HandlerFunc {
 			return
 		}
 
+		// Check if email already exists
+		existingByEmail, _ := userRepo.FindByEmail(email)
+		if existingByEmail != nil {
+			c.JSON(http.StatusConflict, gin.H{"error": "Email address already registered"})
+			return
+		}
+
 		// Hash password
 		hashedPassword, err := services.HashPassword(password)
 		if err != nil {
@@ -63,6 +76,7 @@ func Register(db *mongo.Database, cfg *config.Config) gin.HandlerFunc {
 		user := &models.User{
 			MatricNumber: matricNumber,
 			FullName:     fullName,
+			Email:        email,
 			Department:   department,
 			Faculty:      faculty,
 			PasswordHash: hashedPassword,
@@ -89,6 +103,116 @@ func Register(db *mongo.Database, cfg *config.Config) gin.HandlerFunc {
 	}
 }
 
+// ForgotPassword handles password reset requests for accredited voters
+func ForgotPassword(db *mongo.Database, cfg *config.Config) gin.HandlerFunc {
+	emailService := services.NewBrevoEmailService(cfg)
+
+	return func(c *gin.Context) {
+		var req models.ForgotPasswordRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		req.MatricNumber = services.NormalizeMatricNumber(req.MatricNumber)
+
+		userRepo := repository.NewUserRepository(db)
+
+		user, err := userRepo.FindByMatricNumber(req.MatricNumber)
+		if err != nil || user == nil {
+			c.JSON(http.StatusOK, gin.H{
+				"message": "If the account is eligible, a password reset link has been sent.",
+			})
+			return
+		}
+
+		if user.Role != models.RoleStudent || user.Status != models.StatusApproved || strings.TrimSpace(user.Email) == "" {
+			c.JSON(http.StatusOK, gin.H{
+				"message": "If the account is eligible, a password reset link has been sent.",
+			})
+			return
+		}
+
+		if !emailService.IsConfigured() {
+			log.Printf("Password reset requested for %s but Brevo email service is not configured", user.MatricNumber)
+			c.JSON(http.StatusOK, gin.H{
+				"message": "If the account is eligible, a password reset link has been sent.",
+			})
+			return
+		}
+
+		resetToken, err := generateSecureToken(32)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create reset token"})
+			return
+		}
+
+		tokenHash := hashToken(resetToken)
+		expiresAt := time.Now().Add(1 * time.Hour)
+
+		if err := userRepo.SetPasswordResetToken(user.ID.Hex(), tokenHash, expiresAt); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to store reset token"})
+			return
+		}
+
+		if err := emailService.SendPasswordResetEmail(user.Email, user.FullName, resetToken); err != nil {
+			log.Printf("Failed to send password reset email for %s: %v", user.MatricNumber, err)
+			_ = userRepo.ClearPasswordResetToken(user.ID.Hex())
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send reset email"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"message": "If the account is eligible, a password reset link has been sent.",
+		})
+	}
+}
+
+// ResetPassword completes the password reset flow using a valid reset token
+func ResetPassword(db *mongo.Database) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req models.ResetPasswordRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		userRepo := repository.NewUserRepository(db)
+
+		user, err := userRepo.FindByPasswordResetTokenHash(hashToken(req.Token))
+		if err != nil || user == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid or expired reset token"})
+			return
+		}
+
+		hashedPassword, err := services.HashPassword(req.NewPassword)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process password"})
+			return
+		}
+
+		if err := userRepo.UpdatePassword(user.ID.Hex(), hashedPassword); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update password"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"message": "Password reset successful"})
+	}
+}
+
+func generateSecureToken(byteLength int) (string, error) {
+	buf := make([]byte, byteLength)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(buf), nil
+}
+
+func hashToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
+
 // Login handles student login
 func Login(db *mongo.Database, jwtSecret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -97,6 +221,7 @@ func Login(db *mongo.Database, jwtSecret string) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+		req.MatricNumber = services.NormalizeMatricNumber(req.MatricNumber)
 
 		userRepo := repository.NewUserRepository(db)
 
@@ -155,6 +280,7 @@ func AdminLogin(db *mongo.Database, jwtSecret string) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+		req.MatricNumber = services.NormalizeMatricNumber(req.MatricNumber)
 
 		userRepo := repository.NewUserRepository(db)
 

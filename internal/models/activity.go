@@ -13,6 +13,7 @@ const (
 	ActivityTypeElectionEnded   ActivityType = "election_ended"
 	ActivityTypeVoterApproved   ActivityType = "voter_approved"
 	ActivityTypeVoterRejected   ActivityType = "voter_rejected"
+	ActivityTypeUserRemoved     ActivityType = "user_removed"
 	ActivityTypeCandidateAdded  ActivityType = "candidate_added"
 	ActivityTypePositionAdded   ActivityType = "position_added"
 )

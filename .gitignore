@@ -34,10 +34,11 @@ Thumbs.db
 # Build
 /bin/
 /dist/
+/tmp/
+
+# Local Go caches
+/.gocache/
+/.gomodcache/
 
 # Scripts with credentials
 scripts/create-admin.go
-
-# Build
-/bin/
-/dist/

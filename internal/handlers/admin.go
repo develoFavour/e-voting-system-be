@@ -3,6 +3,7 @@ package handlers
 import (
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/develoFavour/e-voting-system-be/internal/config"
 	"github.com/develoFavour/e-voting-system-be/internal/models"
@@ -33,7 +34,9 @@ func GetPendingAccreditation(db *mongo.Database) gin.HandlerFunc {
 }
 
 // ApproveVoter approves an accreditation request
-func ApproveVoter(db *mongo.Database) gin.HandlerFunc {
+func ApproveVoter(db *mongo.Database, cfg *config.Config) gin.HandlerFunc {
+	emailService := services.NewBrevoEmailService(cfg)
+
 	return func(c *gin.Context) {
 		id := c.Param("id")
 
@@ -47,6 +50,12 @@ func ApproveVoter(db *mongo.Database) gin.HandlerFunc {
 		if err := userRepo.UpdateStatus(id, models.StatusApproved); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to approve voter"})
 			return
+		}
+
+		if strings.TrimSpace(user.Email) != "" && emailService.IsConfigured() {
+			if err := emailService.SendAccreditationApprovedEmail(user.Email, user.FullName); err != nil {
+				log.Printf("Failed to send accreditation approval email for %s: %v", user.MatricNumber, err)
+			}
 		}
 
 		// Log activity
@@ -65,9 +74,22 @@ func ApproveVoter(db *mongo.Database) gin.HandlerFunc {
 }
 
 // RejectVoter rejects an accreditation request
-func RejectVoter(db *mongo.Database) gin.HandlerFunc {
+func RejectVoter(db *mongo.Database, cfg *config.Config) gin.HandlerFunc {
+	emailService := services.NewBrevoEmailService(cfg)
+
 	return func(c *gin.Context) {
 		id := c.Param("id")
+		var req models.RejectAccreditationRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		reason := strings.TrimSpace(req.Reason)
+		if reason == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Rejection reason is required"})
+			return
+		}
 
 		userRepo := repository.NewUserRepository(db)
 		user, err := userRepo.FindByID(id)
@@ -76,9 +98,15 @@ func RejectVoter(db *mongo.Database) gin.HandlerFunc {
 			return
 		}
 
-		if err := userRepo.UpdateStatus(id, models.StatusRejected); err != nil {
+		if err := userRepo.RejectAccreditation(id, reason); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reject voter"})
 			return
+		}
+
+		if strings.TrimSpace(user.Email) != "" && emailService.IsConfigured() {
+			if err := emailService.SendAccreditationRejectedEmail(user.Email, user.FullName, reason); err != nil {
+				log.Printf("Failed to send accreditation rejection email for %s: %v", user.MatricNumber, err)
+			}
 		}
 
 		// Log activity
@@ -87,7 +115,7 @@ func RejectVoter(db *mongo.Database) gin.HandlerFunc {
 		activityRepo := repository.NewActivityRepository(db)
 		_ = activityRepo.Create(&models.Activity{
 			Type:      models.ActivityTypeVoterRejected,
-			Message:   "Rejected voter: " + user.FullName + " (" + user.MatricNumber + ")",
+			Message:   "Rejected voter: " + user.FullName + " (" + user.MatricNumber + ") - " + reason,
 			AdminID:   admin.ID,
 			AdminName: admin.FullName,
 		})

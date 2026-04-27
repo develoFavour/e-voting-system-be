@@ -8,6 +8,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 type UserRepository struct {
@@ -40,6 +41,25 @@ func (r *UserRepository) FindByMatricNumber(matricNumber string) (*models.User, 
 	err := r.collection.FindOne(
 		context.Background(),
 		bson.M{"matric_number": matricNumber},
+		options.FindOne().SetCollation(&options.Collation{
+			Locale:   "en",
+			Strength: 2,
+		}),
+	).Decode(&user)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &user, nil
+}
+
+// FindByEmail finds a user by email address
+func (r *UserRepository) FindByEmail(email string) (*models.User, error) {
+	var user models.User
+	err := r.collection.FindOne(
+		context.Background(),
+		bson.M{"email": email},
 	).Decode(&user)
 
 	if err != nil {
@@ -69,6 +89,24 @@ func (r *UserRepository) FindByID(id string) (*models.User, error) {
 	return &user, nil
 }
 
+// FindByPasswordResetTokenHash finds a user with a valid reset token hash
+func (r *UserRepository) FindByPasswordResetTokenHash(tokenHash string) (*models.User, error) {
+	var user models.User
+	err := r.collection.FindOne(
+		context.Background(),
+		bson.M{
+			"password_reset_token_hash": tokenHash,
+			"password_reset_expires_at": bson.M{"$gt": time.Now()},
+		},
+	).Decode(&user)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &user, nil
+}
+
 // UpdateStatus updates user accreditation status
 func (r *UserRepository) UpdateStatus(id string, status models.UserStatus) error {
 	objectID, err := primitive.ObjectIDFromHex(id)
@@ -84,6 +122,102 @@ func (r *UserRepository) UpdateStatus(id string, status models.UserStatus) error
 				"status":     status,
 				"updated_at": time.Now(),
 			},
+			"$unset": bson.M{
+				"accreditation_rejection_reason": "",
+			},
+		},
+	)
+
+	return err
+}
+
+// RejectAccreditation updates a user's accreditation status and stores the rejection reason.
+func (r *UserRepository) RejectAccreditation(id, reason string) error {
+	objectID, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		return err
+	}
+
+	_, err = r.collection.UpdateOne(
+		context.Background(),
+		bson.M{"_id": objectID},
+		bson.M{
+			"$set": bson.M{
+				"status":                         models.StatusRejected,
+				"accreditation_rejection_reason": reason,
+				"updated_at":                     time.Now(),
+			},
+		},
+	)
+
+	return err
+}
+
+// SetPasswordResetToken stores a password reset token hash and its expiry
+func (r *UserRepository) SetPasswordResetToken(id, tokenHash string, expiresAt time.Time) error {
+	objectID, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		return err
+	}
+
+	_, err = r.collection.UpdateOne(
+		context.Background(),
+		bson.M{"_id": objectID},
+		bson.M{
+			"$set": bson.M{
+				"password_reset_token_hash": tokenHash,
+				"password_reset_expires_at": expiresAt,
+				"updated_at":                time.Now(),
+			},
+		},
+	)
+
+	return err
+}
+
+// UpdatePassword updates a user's password and clears any outstanding reset token
+func (r *UserRepository) UpdatePassword(id, passwordHash string) error {
+	objectID, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		return err
+	}
+
+	_, err = r.collection.UpdateOne(
+		context.Background(),
+		bson.M{"_id": objectID},
+		bson.M{
+			"$set": bson.M{
+				"password_hash": passwordHash,
+				"updated_at":    time.Now(),
+			},
+			"$unset": bson.M{
+				"password_reset_token_hash": "",
+				"password_reset_expires_at": "",
+			},
+		},
+	)
+
+	return err
+}
+
+// ClearPasswordResetToken clears any stored password reset token for a user
+func (r *UserRepository) ClearPasswordResetToken(id string) error {
+	objectID, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		return err
+	}
+
+	_, err = r.collection.UpdateOne(
+		context.Background(),
+		bson.M{"_id": objectID},
+		bson.M{
+			"$unset": bson.M{
+				"password_reset_token_hash": "",
+				"password_reset_expires_at": "",
+			},
+			"$set": bson.M{
+				"updated_at": time.Now(),
+			},
 		},
 	)
 
@@ -95,6 +229,31 @@ func (r *UserRepository) FindPendingAccreditation() ([]*models.User, error) {
 	cursor, err := r.collection.Find(
 		context.Background(),
 		bson.M{"status": models.StatusPending},
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(context.Background())
+
+	var users []*models.User
+	if err = cursor.All(context.Background(), &users); err != nil {
+		return nil, err
+	}
+
+	return users, nil
+}
+
+// FindManagedUsers returns student users whose accreditation has been processed.
+func (r *UserRepository) FindManagedUsers() ([]*models.User, error) {
+	cursor, err := r.collection.Find(
+		context.Background(),
+		bson.M{
+			"role": models.RoleStudent,
+			"status": bson.M{
+				"$in": []models.UserStatus{models.StatusApproved, models.StatusRejected},
+			},
+		},
+		options.Find().SetSort(bson.D{{Key: "updated_at", Value: -1}}),
 	)
 	if err != nil {
 		return nil, err
@@ -126,6 +285,21 @@ func (r *UserRepository) FindByRole(role models.UserRole) ([]*models.User, error
 	}
 
 	return users, nil
+}
+
+// DeleteByID removes a user document by ID.
+func (r *UserRepository) DeleteByID(id string) error {
+	objectID, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		return err
+	}
+
+	_, err = r.collection.DeleteOne(
+		context.Background(),
+		bson.M{"_id": objectID},
+	)
+
+	return err
 }
 
 // MarkAsVoted marks a user as having voted (ATOMIC OPERATION)

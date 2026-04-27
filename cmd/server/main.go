@@ -54,6 +54,8 @@ func main() {
 			public.POST("/login", handlers.Login(db, cfg.JWTSecret))
 			public.POST("/admin/login", handlers.AdminLogin(db, cfg.JWTSecret))
 			public.POST("/refresh-token", handlers.RefreshToken(db, cfg.JWTSecret))
+			public.POST("/forgot-password", handlers.ForgotPassword(db, cfg))
+			public.POST("/reset-password", handlers.ResetPassword(db))
 		}
 
 		// Authentication routes
@@ -62,6 +64,8 @@ func main() {
 			auth.POST("/register", handlers.Register(db, cfg))
 			auth.POST("/login", handlers.Login(db, cfg.JWTSecret))
 			auth.POST("/admin/login", handlers.AdminLogin(db, cfg.JWTSecret))
+			auth.POST("/forgot-password", handlers.ForgotPassword(db, cfg))
+			auth.POST("/reset-password", handlers.ResetPassword(db))
 		}
 
 		// User routes (protected)
@@ -80,8 +84,10 @@ func main() {
 			admin.GET("/dashboard/stats", handlers.GetDashboardStats(db))
 			admin.GET("/election/current", handlers.GetCurrentElection(db))
 			admin.GET("/accreditation/pending", handlers.GetPendingAccreditation(db))
-			admin.PUT("/accreditation/:id/approve", handlers.ApproveVoter(db))
-			admin.PUT("/accreditation/:id/reject", handlers.RejectVoter(db))
+			admin.GET("/users", handlers.GetManagedUsers(db))
+			admin.PUT("/accreditation/:id/approve", handlers.ApproveVoter(db, cfg))
+			admin.PUT("/accreditation/:id/reject", handlers.RejectVoter(db, cfg))
+			admin.DELETE("/users/:id", handlers.DeleteManagedUser(db))
 			admin.POST("/positions", handlers.AddPosition(db))
 			admin.GET("/positions/staged", handlers.GetStagedPositions(db))
 			admin.GET("/candidates", handlers.GetAdminCandidates(db))

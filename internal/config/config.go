@@ -19,6 +19,9 @@ type Config struct {
 	CloudinaryCloudName string
 	CloudinaryAPIKey    string
 	CloudinaryAPISecret string
+	BrevoAPIKey         string
+	SenderEmail         string
+	SenderName          string
 }
 
 func Load() *Config {
@@ -41,6 +44,9 @@ func Load() *Config {
 		CloudinaryCloudName: getEnv("CLOUDINARY_CLOUD_NAME", ""),
 		CloudinaryAPIKey:    getEnv("CLOUDINARY_API_KEY", ""),
 		CloudinaryAPISecret: getEnv("CLOUDINARY_API_SECRET", ""),
+		BrevoAPIKey:         getEnv("BREVO_API_KEY", ""),
+		SenderEmail:         getEnv("SENDER_EMAIL", ""),
+		SenderName:          getEnv("SENDER_NAME", "Hallmark E-Voting"),
 	}
 }
 
